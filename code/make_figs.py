@@ -114,13 +114,14 @@ def tab_main(df):
         for q in S.QUERIES:
             if (q, N) not in piv.index: continue
             r = piv.loc[(q, N)]; mn = r[M].min()
-            cells = [(r"\textbf{%s}" if abs(r[m] - mn) < 1e-9 else "%s") % (f"{r[m]:.1f}" if r[m] < 100 else f"{r[m]:.0f}") for m in M]
+            dag = met.loc[(q, N)] < 0.95
+            cells = [(r"\textbf{%s}" if abs(r[m] - mn) < 1e-9 and not dag else "%s") % (f"{r[m]:.1f}" if r[m] < 100 else f"{r[m]:.0f}") for m in M]
             fixed = r[["PPI++-sub", "Strat-shrink"]]
             name = QNICE[q] + (r"$^\dagger$" if met.loc[(q, N)] < 0.95 else "")
             lines.append(f"{name} & " + " & ".join(cells) +
                          f" & {r['SRS'] / r['Ladder']:.2f}$\\times$ & {fixed.min() / r['Ladder']:.2f}$\\times$ & {fixed.max() / r['Ladder']:.2f}$\\times$ & {cov.loc[(q, N), 'Ladder']:.2f} \\\\")
     tex = r"""\begin{table*}[t]
-\caption{Mean total cost (USD) to answer each query within $\pm5\%$ at 95\% confidence (every method tops up until its reported half-width meets the target), human oracle at \$0.05 per label, 200 runs per cell. PPI++-sub and Strat-shrink are the two single-family planners (\textsc{Ladder} restricted to one surrogate level without bundles, or to stratified plans without bundles). Last columns: \textsc{Ladder}'s saving over SRS, over the better and over the worse single-family planner, and its empirical coverage. $^\dagger$: stratified plans (in \textsc{Ladder} and Strat-shrink) did not reach the target within eight top-up rounds in more than 5\% of runs; excluded from the summaries in the text.}\label{tab:main}
+\caption{Mean total cost (USD) to answer each query within $\pm5\%$ at 95\% confidence (every method tops up until its reported half-width meets the target), human oracle at \$0.05 per label, 200 runs per cell. PPI++-sub and Strat-shrink are the two single-family planners (\textsc{Ladder} restricted to one surrogate level without bundles, or to stratified plans without bundles). Last columns: \textsc{Ladder}'s saving over SRS, over the better and over the worse single-family planner, and its empirical coverage. $^\dagger$: stratified plans (in \textsc{Ladder} and Strat-shrink) did not reach the target within eight top-up rounds in more than 5\% of runs; excluded from the summaries in the text and not marked in bold. Bold marks the cheapest method.}\label{tab:main}
 \centering\footnotesize\setlength{\tabcolsep}{4pt}
 \begin{tabular}{lrrrrrrrrrr}
 \toprule
@@ -208,8 +209,9 @@ def tab_llm(df):
         ns = [n for (qq, n) in piv.index if qq == q and n >= 40000]
         if not ns: continue
         r = piv.loc[(q, ns[0])]; mn = r[M].min()
-        name = QNICE[q] + (r"$^\dagger$" if met.loc[(q, ns[0])] < 0.95 else "")
-        rows.append([name] + [(r"\textbf{%.2f}" if abs(r[m] - mn) < 1e-12 else "%.2f") % r[m] for m in M] +
+        dag = met.loc[(q, ns[0])] < 0.95
+        name = QNICE[q] + (r"$^\dagger$" if dag else "")
+        rows.append([name] + [(r"\textbf{%.2f}" if abs(r[m] - mn) < 1e-12 and not dag else "%.2f") % r[m] for m in M] +
                     ["%.2f" % cov.loc[(q, ns[0]), "Ladder"]])
     simple_table(rows, ["Query", "SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shr.", r"\textsc{Ladder}", "Cov."],
                  r"LLM oracle (DeepSeek V4-Pro with reasoning; tuples it cannot label are excluded): mean cost (USD) for $\pm5\%$ at 95\%, tables of about $10^5$ tuples, 200 runs per cell. $^\dagger$ as in Table~\ref{tab:main}.",
@@ -232,7 +234,7 @@ def tab_ablation(df):
         if q not in g.index: continue
         rows.append([QNICE[q], "%.1f" % base[q]] + [pct(100 * (g.loc[q, c] / base[q] - 1)) for c, _ in cols])
     gm = lambda c: 100 * (np.exp(np.mean(np.log(g[c] / base))) - 1)
-    rows.append(["Geo. mean", "--"] + [("+%.1f\\%%" % gm(c)) if gm(c) >= 0 else ("$-$%.1f\\%%" % -gm(c)) for c, _ in cols])
+    rows.append(["Geo. mean", "--"] + [("0.0\\%" if abs(gm(c)) < 0.05 else ("+%.1f\\%%" % gm(c)) if gm(c) > 0 else ("$-$%.1f\\%%" % -gm(c))) for c, _ in cols])
     simple_table(rows, ["Query", "\\textsc{Ladder} (\\$)"] + [n for _, n in cols],
                  "Ablation ($N=10^6$; Offensive $4.3\\times10^5$; 200 runs per cell, all at equal delivered precision): cost of each variant relative to full \\textsc{Ladder} (positive = more expensive).",
                  "tab:ablation", "ablation.tex", "lrrrrrrr", wide=True, sep="6pt")
@@ -252,7 +254,7 @@ def tab_groupby(df):
                         [("\\textbf{%.1f}" if abs(d.cost[m] - mn) < 1e-9 else "%.1f") % d.cost[m] for m in ["SRS", "PPI++", "Ladder"]] +
                         ["%.2f" % d.loc["Ladder", "cov"], "%.2f" % d.loc["Ladder", "allcov"]])
     simple_table(rows, ["Query", "$N$", "SRS", "PPI++", "\\textsc{Ladder}", "Cov.", "All"],
-                 "GROUP BY COUNT with every group within $\\pm10\\%$ (95\\%): mean cost (USD), \\textsc{Ladder}'s per-group coverage and fraction of runs in which all groups are covered.",
+                 "GROUP BY COUNT with every group within $\\pm10\\%$ (95\\%), all methods with top-up: mean cost (USD), \\textsc{Ladder}'s per-group coverage and fraction of runs in which all groups are covered.",
                  "tab:groupby", "groupby.tex", "llrrrrr")
     return g
 

@@ -173,7 +173,7 @@ def run_strat(st, pilot, rest, eps, conf, rng, cand):
     for h, w, s in zip(strata, W, sd):
         ids = rest[st.P[rest, k] == h]
         mh = int(min(len(ids), max(2, np.ceil(m * w * s / np.sum(W * sd)))))
-        smp = rng.choice(ids, mh, replace=False); n_or += mh
+        smp = ids[:mh]; n_or += mh  # rest is in random order: a prefix is an SRSWOR, and top-up rounds extend it
         th += w * st.Y[smp].mean()
         var += w * w * np.var(st.Y[smp], ddof=1) / mh * (1 - mh / len(ids))
     return th, L.Z[conf] * np.sqrt(var), st.c0 * n_or + st.Cost[rest, k].sum(), [(k,)], [n_or]
@@ -183,7 +183,7 @@ def run_srs(st, pilot, rest, eps, conf, rng, cand):
     Yp = st.Y[pilot]; N_rest = len(rest)
     V = (eps * max(Yp.mean(), 1 / len(pilot)) / L.Z[conf]) ** 2
     m0 = min(N_rest, 1 / (V / pilot_var(Yp) + 1 / N_rest))
-    s = rng.choice(rest, max(2, int(np.ceil(m0))), replace=False)
+    s = rest[:max(2, int(np.ceil(m0)))]  # prefix of the random order, so top-up rounds extend the sample
     hw = L.Z[conf] * np.sqrt(np.var(st.Y[s], ddof=1) * (1 / len(s) - 1 / N_rest))
     return st.Y[s].mean(), hw, st.c0 * len(s), [], [len(s)]
 
@@ -234,6 +234,21 @@ class GroupSetting(Setting):
         self.G = len(TASKS[task]["labels"])
         self.Yg = np.stack([(self.Y == g).astype(float) for g in range(self.G)])  # (G, N)
         self.truth_g = self.Yg.mean(1)
+
+
+def trial_groupby(st, method, eps=0.1, conf=0.95, pilot_n=300, seed=0, max_rounds=8, **kw):
+    """GROUP BY with the same top-up rule as trial(): while the largest reported relative half-width exceeds eps,
+    re-plan for a proportionally tighter target with the same random order (the samples extend), up to max_rounds.
+    The cost of the final round is charged."""
+    eps_eff = eps
+    for rnd in range(max_rounds):
+        r = run_groupby(st, method, eps_eff, conf, pilot_n, seed, **kw)
+        ratio = r["max_rel_hw_est"]
+        if ratio <= eps + 1e-12 or r["sizes"][0] >= st.N - pilot_n:  # met, or the oracle saw everything
+            break
+        eps_eff *= min(0.9, max(0.5, 0.9 * eps / ratio))  # tighten, at most halve per round
+    r.update(rounds=rnd + 1, met=ratio <= eps + 1e-12)
+    return r
 
 
 def run_groupby(st, method, eps=0.1, conf=0.95, pilot_n=300, seed=0, bundles=True, max_len=2, m_min=10):
@@ -292,4 +307,5 @@ def run_groupby(st, method, eps=0.1, conf=0.95, pilot_n=300, seed=0, bundles=Tru
     est, hw, cov = map(np.array, zip(*out))
     return dict(method=method, cost=cost + pilot_cost, all_covered=cov.all(), cov_rate=cov.mean(),
                 max_rel_hw=np.max(hw / st.truth_g), max_rel_err=np.max(np.abs(est - st.truth_g) / st.truth_g),
+                max_rel_hw_est=np.max(hw / np.maximum(np.abs(est), 1e-12)),
                 chain="|".join("+".join(st.labelers[k] for k in mm) for mm in chain), sizes=[len(s) for s in samples])

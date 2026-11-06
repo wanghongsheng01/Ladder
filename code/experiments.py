@@ -143,7 +143,7 @@ def _gjob(args):
     st = _gcache[(q, scale)]
     out = []
     for sd in sds:
-        r = S.run_groupby(st, m, eps=0.1, seed=sd); r.update(query=q, N=st.N, seed=sd); out.append(r)
+        r = S.trial_groupby(st, m, eps=0.1, seed=sd); r.update(query=q, N=st.N, seed=sd); out.append(r)
     return out
 
 

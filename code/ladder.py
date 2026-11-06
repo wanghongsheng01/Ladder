@@ -281,7 +281,7 @@ def estimate_strat(Y, f1, S1, cuts, sd, n, rng, N_rest, conf=0.95, p_bar=None):
         idx = S1[h == k]
         if len(idx) == 0: continue
         nk = int(min(len(idx), max(5, np.ceil(alloc[k]))))
-        draws.append((k, len(idx), Y[rng.choice(idx, nk, replace=False)]))
+        draws.append((k, len(idx), Y[idx[:nk]]))  # S1 is in random order: prefixes are nested across top-up rounds
     th = sum(w_hat[k] * yk.mean() for k, _, yk in draws)
     used = sum(len(yk) for _, _, yk in draws)
     v_within = 0.0
