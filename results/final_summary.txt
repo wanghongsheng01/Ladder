@@ -1,0 +1,100 @@
+RQ1 n big 19
+ vsSRS geo 2.02 range 1.18-3.50
+ vsPub geo 1.38 max 3.96; at 1e6 geo 1.72
+ vsBetterFixed geo 1.013; vsWorseFixed geo 1.127 max 1.430 (('yelp-1star', np.int64(100000)))
+ PPI++-sub/Ladder max 1.430  Strat-shrink/Ladder max 1.127
+ Ladder / cheapest max 1.049
+ cheapest among 26 met configs: {'Ladder': 19, 'Strat-shrink': 7}
+ bundle share 0.703; >=2 vendors 0.573
+ IMDB 1e6 PPI++ 87.8 Ladder 27.6
+ IMDB 1e6 Ladder last level mean 22687
+ dagger (Ladder met<0.95): [('emotion-anger', 2000), ('emotion-surprise', 2000), ('emotion-surprise', 100000)] {('emotion-anger', 2000): 0.255, ('emotion-surprise', 2000): 0.0, ('emotion-surprise', 100000): 0.565}
+ Strat-shrink met at those: {('emotion-anger', 2000): 0.435, ('emotion-surprise', 2000): 0.0, ('emotion-surprise', 100000): 0.645}
+ COV Ladder       n82 mean 0.944 min 0.860 <0.9 1 <0.8 0
+ COV SRS          n82 mean 0.952 min 0.920 <0.9 0 <0.8 0
+ COV PPI++        n82 mean 0.947 min 0.580 <0.9 2 <0.8 1
+ COV PPI++-sub    n82 mean 0.949 min 0.905 <0.9 0 <0.8 0
+ COV Strat        n82 mean 0.897 min 0.410 <0.9 16 <0.8 8
+ COV Strat-shrink n82 mean 0.946 min 0.840 <0.9 1 <0.8 0
+               query     N  method  covered         exp  c0  eps
+48  emotion-surprise  1940  Ladder     0.86  llm_oracle NaN  NaN
+ Ladder cov on big 0.946
+ OC vsPPI@1 {'emotion-anger': 1.04, 'hate': 1.23, 'imdb-pos': 1.2, 'yelp-avg': 1.18}
+ OC vsPPI@0.005 {'emotion-anger': 1.4, 'hate': 3.06, 'imdb-pos': 16.26, 'yelp-avg': 21.57}
+ OC vsBetterFixed range 0.99-1.09
+ OC SRS/PPI++ <1 (PPI++ dearer than SRS): [('emotion-anger', 0.005), ('hate', 0.005), ('hate', 0.02), ('hate', 0.05), ('imdb-pos', 0.005), ('imdb-pos', 0.02), ('yelp-avg', 0.005), ('yelp-avg', 0.02), ('yelp-avg', 0.05)]
+ OC Strat dearer than SRS: [('emotion-anger', 0.005), ('emotion-anger', 0.02), ('emotion-anger', 0.05), ('emotion-anger', 0.2), ('emotion-anger', 1.0), ('hate', 0.005), ('hate', 0.02), ('hate', 0.05), ('imdb-pos', 0.005), ('imdb-pos', 0.02), ('yelp-avg', 0.005), ('yelp-avg', 0.02), ('yelp-avg', 0.05)]
+ OC planned dearer than SRS: []
+ EPS vsSRS eps            0.02  0.05  0.10
+query                          
+emotion-anger  1.28  1.29  1.29
+hate           1.48  1.42  1.29
+imdb-pos       4.81  3.50  2.17
+yelp-avg       4.06  2.13  1.27
+ EPS vsPPI eps            0.02  0.05  0.10
+query                          
+emotion-anger  1.05  1.08  1.19
+hate           1.25  1.44  1.81
+imdb-pos       1.49  3.18  5.13
+yelp-avg       2.23  3.96  4.58
+ weak vsSRS {('emotion-anger', 100000): 1.26, ('emotion-anger', 1000000): 1.29, ('hate', 100000): 1.41, ('hate', 1000000): 1.42, ('offensive', 43000): 1.4, ('offensive', 430000): 1.47}
+ smallN PPI++/Ladder fig queries {'imdb-pos': 1.014, 'yelp-avg': 1.006, 'agnews-biz': 1.185, 'hate': 1.049}
+RQ4 n met 9 vsPub geo 2.64 max 7.37; vsSRS geo 1.68
+ Strat-shrink cheaper avg 0.064; IMDB 0.282
+ Ladder/betterfixed geo 1.068
+ IMDB LLM PPI++ 6.77 SRS 1.42
+ ABL abl-Ladder-len1      geo -0.2% max +3% (imdb-pos) min -2%
+ ABL abl-Ladder-nobundle  geo +2.3% max +9% (hate) min -1%
+ ABL abl-Ladder-nostrat   geo +9.6% max +38% (yelp-1star) min -1%
+ ABL cat-DeepSeek         geo -0.0% max +2% (imdb-pos) min -2%
+ ABL cat-GLM              geo +2.5% max +13% (hate) min -3%
+ ABL cat-Kimi             geo +6.1% max +16% (imdb-pos) min -2%
+ ABL cat-all              geo +0.0% max +0% (agnews-biz) min +0%
+tag               abl-Ladder  abl-Ladder-len1  abl-Ladder-nobundle  abl-Ladder-nostrat  cat-DeepSeek  cat-GLM  cat-Kimi  cat-all
+query                                                                                                                           
+agnews-biz               0.0             -1.0                  6.0                20.0           1.0      6.0      16.0      0.0
+amazon-avg               0.0              0.0                  1.0                 0.0          -0.0     -2.0       1.0      0.0
+amazon-pos               0.0             -1.0                 -0.0                 5.0           0.0     -1.0       6.0      0.0
+emotion-anger            0.0              0.0                 -0.0                 7.0           1.0     -3.0      -2.0      0.0
+emotion-surprise         0.0              0.0                  2.0                18.0          -1.0      2.0       2.0      0.0
+hate                     0.0             -1.0                  9.0                 7.0          -0.0     13.0      12.0      0.0
+imdb-pos                 0.0              3.0                  2.0                 0.0           2.0      1.0      16.0      0.0
+offensive                0.0             -1.0                  6.0                 7.0          -1.0     11.0       5.0      0.0
+yelp-1star               0.0             -2.0                 -1.0                38.0          -2.0      3.0       7.0      0.0
+yelp-avg                 0.0              0.0                 -0.0                -1.0          -1.0     -3.0      -1.0      0.0
+                  cost                               cov                     
+pilot              100      200      400      800    100    200    400    800
+query                                                                        
+emotion-anger  482.003  451.925  429.592  423.113  0.945  0.940  0.925  0.920
+hate            94.960   95.838  103.242  122.588  0.950  0.950  0.935  0.955
+imdb-pos        23.446   27.586   37.821   58.304  0.960  0.955  0.930  0.935
+yelp-avg         9.296   14.406   24.772   45.897  0.920  0.910  0.950  0.945
+                                       cost    cov   met
+query        tag        method                          
+rma-others   rma        Ladder        3.430  0.940  1.00
+                        PPI++         6.027  0.945  1.00
+                        PPI++-sub     4.398  0.950  1.00
+                        SRS           8.889  0.950  1.00
+                        Strat         6.052  0.870  1.00
+                        Strat-shrink  3.299  0.965  1.00
+             rma-nocode Ladder        3.373  0.930  1.00
+rma-quality  rma        Ladder        0.986  0.950  1.00
+                        PPI++         1.629  0.975  1.00
+                        PPI++-sub     1.036  0.950  1.00
+                        SRS           3.017  0.930  1.00
+                        Strat         1.732  0.935  1.00
+                        Strat-shrink  1.136  0.960  1.00
+             rma-nocode Ladder        1.114  0.950  1.00
+rma-shipment rma        Ladder        2.741  0.915  0.99
+                        PPI++         3.847  0.945  1.00
+                        PPI++-sub     3.312  0.950  1.00
+                        SRS           7.035  0.940  1.00
+                        Strat         3.994  0.920  1.00
+                        Strat-shrink  2.716  0.955  1.00
+             rma-nocode Ladder        3.081  0.930  0.99
+ code share {'rma-others': 0.34, 'rma-quality': 1.0, 'rma-shipment': 0.94}
+         cost    cov   allc
+method                     
+Ladder  1.660  0.948  0.835
+PPI++   2.161  0.945  0.810
+SRS     2.506  0.952  0.850

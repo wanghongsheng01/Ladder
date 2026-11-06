@@ -12,6 +12,7 @@ This repository contains everything needed to reproduce every number, table and 
 | `code/simulate.py` | replay harness and baselines (SRS, PPI++, proxy-stratified sampling) |
 | `code/experiments.py` | all experiments (`main`, `llm_oracle`, `oracle_cost`, `eps`, `ablation`, `pilot`, `groupby`, `overhead`) |
 | `code/make_figs.py` | all figures and tables |
+| `code/summarize.py` | every number quoted in the text of the paper |
 | `results/labels/<task>__<labeler>.csv` | one row per tuple: `tid, pred, cost_usd, in_tok, out_tok` — the real outputs and measured costs of every labeler |
 | `results/*.csv` | per-trial results of every experiment |
 
@@ -25,6 +26,7 @@ pip install numpy scipy pandas matplotlib pyarrow
 cd code
 python experiments.py main        # and llm_oracle, oracle_cost, eps, ablation, pilot, groupby, overhead
 python make_figs.py all
+python summarize.py          # every number quoted in the text (results/final_summary.txt)
 ```
 All experiments replay sampling plans on the released labels and costs; no LLM is called. `make_figs.py` writes the figures and LaTeX tables of the paper to `05_paper/figs/` and `05_paper/tables/` next to `code/`; the tables are byte-identical to the submitted ones.
 
