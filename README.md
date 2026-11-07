@@ -9,8 +9,8 @@ This repository contains everything needed to reproduce every number, table and 
 | `code/label.py` | the nine physical labelers (model, vendor, prompting mode, batch size), prompts, answer parsing, list prices |
 | `code/llm.py` | cached OpenAI-compatible client (keys are read from `LLM_KEYS_JSON`, never stored here) |
 | `code/ladder.py` | surrogates, nested control-variate estimator, closed-form allocation, ladder search, GROUP BY allocation |
-| `code/simulate.py` | replay harness and baselines (SRS, PPI++, proxy-stratified sampling) |
-| `code/experiments.py` | all experiments (`main`, `llm_oracle`, `oracle_cost`, `eps`, `ablation`, `pilot`, `groupby`, `overhead`) |
+| `code/simulate.py` | replay harness, top-up with doubling and exact fallback, and baselines (SRS, PPI++, proxy-stratified sampling, MultiPPI-style MLBLUE allocator) |
+| `code/experiments.py` | all experiments (`main`, `llm_oracle`, `oracle_cost`, `eps`, `ablation`, `depth`, `pilot`, `groupby`, `overhead`) |
 | `code/make_figs.py` | all figures and tables |
 | `code/summarize.py` | every number quoted in the text of the paper |
 | `results/labels/<task>__<labeler>.csv` | one row per tuple: `tid, pred, cost_usd, in_tok, out_tok` — the real outputs and measured costs of every labeler |
@@ -24,7 +24,7 @@ The enterprise case study (Section V-H) uses de-identified customer-service note
 ```bash
 pip install numpy scipy pandas matplotlib pyarrow
 cd code
-python experiments.py main        # and llm_oracle, oracle_cost, eps, ablation, pilot, groupby, overhead
+python experiments.py main        # and llm_oracle, oracle_cost, eps, ablation, depth, pilot, groupby, overhead
 python make_figs.py all
 python summarize.py          # every number quoted in the text (results/final_summary.txt)
 ```

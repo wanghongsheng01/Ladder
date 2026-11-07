@@ -105,28 +105,30 @@ def tab_main(df):
     g = agg(df, ["query", "N"])
     piv = g.pivot_table(index=["query", "N"], columns="method", values="cost")
     cov = g.pivot_table(index=["query", "N"], columns="method", values="cov")
-    met = df[df.method == "Ladder"].groupby(["query", "N"]).met.mean()
-    M = ["SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shrink", "Ladder"]
+    met = df.groupby(["query", "N", "method"]).met.mean().unstack()
+    M = ["SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shrink", "MultiPPI", "Ladder"]
+    fmt = lambda v: f"{v:.1f}" if v < 100 else f"{v:.0f}"
     lines = []
-    for N in sorted(df.N.unique()):
-        if N < 50000: continue
-        lines.append(r"\midrule\multicolumn{10}{l}{\emph{$N=%s$ tuples}}\\" % (f"{N:,}".replace(",", "{,}")))
+    # Offensive has 860 labeled tuples, so its tables are 0.43x the size of the others
+    for head, Ns in [(r"$N=10^5$ tuples (Offensive: $4.3\times10^4$)", (43000, 100000)),
+                     (r"$N=10^6$ tuples (Offensive: $4.3\times10^5$)", (430000, 1000000))]:
+        lines.append(r"\midrule\multicolumn{12}{l}{\emph{%s}}\\" % head)
         for q in S.QUERIES:
-            if (q, N) not in piv.index: continue
-            r = piv.loc[(q, N)]; mn = r[M].min()
-            dag = met.loc[(q, N)] < 0.95
-            cells = [(r"\textbf{%s}" if abs(r[m] - mn) < 1e-9 and not dag else "%s") % (f"{r[m]:.1f}" if r[m] < 100 else f"{r[m]:.0f}") for m in M]
-            fixed = r[["PPI++-sub", "Strat-shrink"]]
-            name = QNICE[q] + (r"$^\dagger$" if met.loc[(q, N)] < 0.95 else "")
-            lines.append(f"{name} & " + " & ".join(cells) +
-                         f" & {r['SRS'] / r['Ladder']:.2f}$\\times$ & {fixed.min() / r['Ladder']:.2f}$\\times$ & {fixed.max() / r['Ladder']:.2f}$\\times$ & {cov.loc[(q, N), 'Ladder']:.2f} \\\\")
+            for N in Ns:
+                if (q, N) not in piv.index: continue
+                assert met.loc[(q, N), M].min() >= 0.95, (q, N)
+                r = piv.loc[(q, N)]; mn = r[M].min()
+                cells = [(r"\textbf{%s}" if abs(r[m] - mn) < 1e-9 else "%s") % fmt(r[m]) for m in M]
+                fixed = r[["PPI++-sub", "Strat-shrink"]]
+                lines.append(f"{QNICE[q]} & " + " & ".join(cells) +
+                             f" & {r['SRS'] / r['Ladder']:.2f}$\\times$ & {r['MultiPPI'] / r['Ladder']:.2f}$\\times$ & {fixed.min() / r['Ladder']:.2f}$\\times$ & {fixed.max() / r['Ladder']:.2f}$\\times$ & {cov.loc[(q, N), 'Ladder']:.2f} \\\\")
     tex = r"""\begin{table*}[t]
-\caption{Mean total cost (USD) to answer each query within $\pm5\%$ at 95\% confidence (every method tops up until its reported half-width meets the target), human oracle at \$0.05 per label, 200 runs per cell. PPI++-sub and Strat-shrink are the two single-family planners (\textsc{Ladder} restricted to one surrogate level without bundles, or to stratified plans without bundles). Last columns: \textsc{Ladder}'s saving over SRS, over the better and over the worse single-family planner, and its empirical coverage. $^\dagger$: stratified plans (in \textsc{Ladder} and Strat-shrink) did not reach the target within eight top-up rounds in more than 5\% of runs; excluded from the summaries in the text and not marked in bold. Bold marks the cheapest method.}\label{tab:main}
-\centering\footnotesize\setlength{\tabcolsep}{4pt}
-\begin{tabular}{lrrrrrrrrrr}
+\caption{Mean total cost (USD) to answer each query within $\pm5\%$ at 95\% confidence, human oracle at \$0.05 per label, 200 runs per cell; every method tops up until its reported half-width meets the target, and every method meets it in every configuration. PPI++-sub and Strat-shrink are the two single-family planners (\textsc{Ladder} restricted to one surrogate level without bundles, or to stratified plans without bundles); MultiPPI is the MultiPPI-style allocator over all subsets of the oracle and up to five skyline labelers. Last columns: \textsc{Ladder}'s saving over SRS, over MultiPPI, over the better and over the worse single-family planner, and its empirical coverage. Bold marks the cheapest method.}\label{tab:main}
+\centering\footnotesize\setlength{\tabcolsep}{3.4pt}
+\begin{tabular}{lrrrrrrrrrrrr}
 \toprule
-Query & SRS & PPI++ & Strat & PPI++-sub & Strat-shrink & \textsc{Ladder} & vs SRS & vs better & vs worse & Cov.\\
-""" + "\n".join(lines).replace(r"\multicolumn{10}", r"\multicolumn{11}") + r"""
+Query & SRS & PPI++ & Strat & PPI++-sub & Strat-shrink & MultiPPI & \textsc{Ladder} & vs SRS & vs MultiPPI & vs better & vs worse & Cov.\\
+""" + "\n".join(lines).replace(r"\multicolumn{12}", r"\multicolumn{13}") + r"""
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -202,20 +204,19 @@ def tab_llm(df):
     g = agg(df, ["query", "N"])
     piv = g.pivot_table(index=["query", "N"], columns="method", values="cost")
     cov = g.pivot_table(index=["query", "N"], columns="method", values="cov")
-    met = df[df.method == "Ladder"].groupby(["query", "N"]).met.mean()
-    M = ["SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shrink", "Ladder"]
+    met = df.groupby(["query", "N", "method"]).met.mean().unstack()
+    M = ["SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shrink", "MultiPPI", "Ladder"]
     rows = []
     for q in S.QUERIES:
         ns = [n for (qq, n) in piv.index if qq == q and n >= 40000]
         if not ns: continue
+        assert met.loc[(q, ns[0]), M].min() >= 0.95, q
         r = piv.loc[(q, ns[0])]; mn = r[M].min()
-        dag = met.loc[(q, ns[0])] < 0.95
-        name = QNICE[q] + (r"$^\dagger$" if dag else "")
-        rows.append([name] + [(r"\textbf{%.2f}" if abs(r[m] - mn) < 1e-12 and not dag else "%.2f") % r[m] for m in M] +
-                    ["%.2f" % cov.loc[(q, ns[0]), "Ladder"]])
-    simple_table(rows, ["Query", "SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shr.", r"\textsc{Ladder}", "Cov."],
-                 r"LLM oracle (DeepSeek V4-Pro with reasoning; tuples it cannot label are excluded): mean cost (USD) for $\pm5\%$ at 95\%, tables of about $10^5$ tuples, 200 runs per cell. $^\dagger$ as in Table~\ref{tab:main}.",
-                 "tab:llm", "llm_oracle.tex", "lrrrrrrr", sep="2.2pt")
+        rows.append([QNICE[q]] + [(r"\textbf{%.2f}" if abs(r[m] - mn) < 1e-12 else "%.2f") % r[m] for m in M])
+    cv = [cov.loc[(q, n), "Ladder"] for (q, n) in piv.index if n >= 40000]
+    simple_table(rows, ["Query", "SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shr.", "MultiPPI", r"\textsc{Ladder}"],
+                 r"LLM oracle (DeepSeek V4-Pro with reasoning; tuples it cannot label are excluded): mean cost (USD) for $\pm5\%%$ at 95\%%, tables of about $10^5$ tuples, 200 runs per cell; every method meets the target, and \textsc{Ladder}'s empirical coverage is %.2f--%.2f." % (min(cv), max(cv)),
+                 "tab:llm", "llm_oracle.tex", "lrrrrrrr", sep="1.5pt")
     return g
 
 

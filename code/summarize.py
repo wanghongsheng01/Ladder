@@ -81,3 +81,31 @@ rm = R("rma").groupby(["query", "tag", "method"]).agg(cost=("cost", "mean"), cov
 rr = R("rma"); rl = rr[(rr.method == "Ladder") & (rr.tag == "rma")]
 print(" code share", rl.groupby("query").chain.apply(lambda s: s.fillna("").str.contains("code").mean()).round(2).to_dict())
 gb = R("rma_groupby").groupby("method").agg(cost=("cost", "mean"), cov=("cov_rate", "mean"), allc=("all_covered", "mean")).round(3); print(gb)
+# MultiPPI-style allocator and all seven methods (RQ1, RQ4, RMA)
+M7 = M6[:5] + ["MultiPPI", "Ladder"]
+print("MPPI big: MultiPPI/Ladder geo %.3f range %.2f-%.2f; cov MultiPPI %.3f Ladder %.3f" % (
+      geo(r.MultiPPI / r.Ladder), (r.MultiPPI / r.Ladder).min(), (r.MultiPPI / r.Ladder).max(), C.loc[big, "MultiPPI"].mean(), C.loc[big, "Ladder"].mean()))
+print(" big: Ladder/cheapest-of-7 max %.3f geo %.3f; cheapest-of-7 counts %s" % (
+      (r.Ladder / r[M7].min(1)).max(), geo(r.Ladder / r[M7].min(1)), r[M7].idxmin(1).value_counts().to_dict()))
+print(" big: max over other methods of X/Ladder:", {k: round((r[k] / r.Ladder).max(), 3) for k in M7 if k != "Ladder"})
+print(" MultiPPI met by N:", MT.MultiPPI.groupby(level=1).mean().round(3).to_dict())
+v = A[A.method == "MultiPPI"].covered
+print(" COV MultiPPI n%d mean %.3f min %.3f <0.9 %d" % (len(v), v.mean(), v.min(), (v < 0.9).sum()))
+print("MPPI LLM: MultiPPI/Ladder geo %.3f; Ladder/cheapest-of-7 geo %.3f max %.3f; cheapest %s" % (
+      geo(x.MultiPPI / x.Ladder), geo(x.Ladder / x[M7].min(1)), (x.Ladder / x[M7].min(1)).max(), x[M7].idxmin(1).value_counts().to_dict()))
+print(" LLM Ladder/better-fixed max %.3f (%s)" % ((x.Ladder / x[["PPI++-sub", "Strat-shrink"]].min(1)).max(), (x.Ladder / x[["PPI++-sub", "Strat-shrink"]].min(1)).idxmax()))
+print(" LLM all-method met:", ML.min(1).round(3).to_dict())
+# depth: one-level vs full Ladder
+dp = R("depth").groupby(["query", "c0", "eps", "method"]).cost.mean().unstack()
+print("DEPTH len1/Ladder-1 (%):"); print((100 * (dp["Ladder-len1"] / dp.Ladder - 1)).round(1).unstack(["c0", "eps"]).to_string())
+# no-oracle cheapest-labeler scan and LLM oracle vs human truth (2,000-tuple labeled samples)
+import simulate as S
+CAT = ["glm-air-b10", "ds-flash", "ds-flash-b10", "ds-flash-think", "ds-pro", "kimi-k2.6-b10", "kimi-k3-b10"]
+for q in ["imdb-pos", "yelp-1star", "yelp-avg", "agnews-biz", "emotion-surprise", "emotion-anger", "hate", "offensive", "amazon-avg", "amazon-pos"]:
+    task, fy = S.QUERIES[q]
+    gold, Pp, Cc = S.load_task(task, CAT + ["ds-pro-think"])
+    k = int(np.argmin(Cc[:, :len(CAT)].mean(0))); t = fy(gold).mean()
+    ok = Pp[:, k] >= 0; est = fy(Pp[ok, k]).mean(); ok0 = Pp[:, -1] >= 0; orc = fy(Pp[ok0, -1]).mean()
+    print(" NOORACLE %-16s cheapest %-12s $%.0f/1M bias %+.1f%%; LLM-oracle vs human %+.1f%%" % (q, CAT[k], 1e6 * Cc[:, k].mean(), 100 * (est / t - 1), 100 * (orc / t - 1)))
+rmM = R("rma"); rmM = rmM[rmM.tag == "rma"].groupby(["query", "method"]).cost.mean().unstack()
+print("RMA cost:", rmM[["SRS", "PPI++", "Strat", "PPI++-sub", "Strat-shrink", "MultiPPI", "Ladder"]].round(2).to_string())

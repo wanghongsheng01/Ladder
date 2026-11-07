@@ -14,7 +14,7 @@ CATALOG = ["glm-air-b10", "ds-flash", "ds-flash-b10", "ds-flash-think", "ds-pro"
            "kimi-k3-b10", "ds-pro-think"]
 SINGLE_Q = ["imdb-pos", "yelp-1star", "yelp-avg", "agnews-biz", "emotion-surprise", "emotion-anger", "hate",
             "offensive", "amazon-avg", "amazon-pos"]
-METHODS = ["SRS", "PPI++", "PPI++-sub", "Strat", "Strat-shrink", "Ladder"]
+METHODS = ["SRS", "PPI++", "PPI++-sub", "Strat", "Strat-shrink", "MultiPPI", "Ladder"]
 TRIALS = int(os.environ.get("TRIALS", 200))
 _cache = {}
 
@@ -88,6 +88,12 @@ def main(exp):
                 J += [(q, CATALOG, 0.05, 500, "human", m, 0.05, 200, s, "abl-" + m) for s in seeds()]
             for cn, labs in cats.items():
                 J += [(q, labs, 0.05, 500, "human", "Ladder", 0.05, 200, s, "cat-" + cn) for s in seeds()]
+    elif exp == "depth":  # where deeper ladders pay off: expensive oracle and a tight target
+        for q in ["imdb-pos", "hate", "emotion-anger", "yelp-avg", "agnews-biz", "amazon-pos"]:
+            for c0 in [0.05, 1.0]:
+                for eps in [0.05, 0.02]:
+                    for m in ["Ladder", "Ladder-len1"]:
+                        J += [(q, CATALOG, c0, 500, "human", m, eps, 200, s, f"depth-{c0}-{eps}") for s in seeds()]
     elif exp == "pilot":
         for q in ["imdb-pos", "hate", "emotion-anger", "yelp-avg"]:
             for pl in [100, 200, 400, 800]:

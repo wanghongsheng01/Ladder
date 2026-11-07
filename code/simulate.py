@@ -107,20 +107,22 @@ def plan_ladder(st, pilot, eps, conf, cand_labelers, bundles=True, max_len=3, m_
     return best
 
 
-def run_ladder(st, pilot, rest, eps, conf, rng, cand, **kw):
+def run_ladder(st, pilot, rest, eps, conf, rng, cand, info=None, n_boost=1.0, **kw):
     plan = plan_ladder(st, pilot, eps, conf, cand, **kw)
+    if info is not None: info["kind"] = plan["kind"]
     if plan["kind"] == "strat":
         m1 = int(min(len(rest), np.ceil(plan["m1"])))
         S1 = rng.permutation(rest)[:m1]
         f1 = plan["sur"](st.P[S1])
-        th, hw, n_or = L.estimate_strat(st.Y, f1, S1, plan["cuts"], plan["sd"], plan["n"], rng, len(rest), conf,
+        th, hw, n_or = L.estimate_strat(st.Y, f1, S1, plan["cuts"], plan["sd"], min(m1, plan["n"] * n_boost), rng, len(rest), conf,
                                         p_bar=st.Y[pilot].mean())
         mem = plan["chain"][0]
         cost = st.c0 * n_or + st.Cost[S1][:, list(mem)].sum()
         return th, hw, cost, plan["chain"], [n_or, m1]
     if plan["kind"] == "srs":
         return run_srs(st, pilot, rest, eps, conf, rng, cand)
-    chain, m, alphas, sur = plan["chain"], plan["m"], plan["alphas"], plan["sur"]
+    chain, m, alphas, sur = plan["chain"], plan["m"].copy(), plan["alphas"], plan["sur"]
+    m[0] = min(m[0] * n_boost, len(rest))  # top-up boost of the oracle level (nested_samples keeps m sorted)
     samples = L.nested_samples(rest, m, rng)
     th, hw = L.estimate_prefix(st.Y, st.P, sur, samples, alphas, len(rest), conf)
     cost = st.c0 * len(samples[0])
@@ -188,29 +190,112 @@ def run_srs(st, pilot, rest, eps, conf, rng, cand):
     return st.Y[s].mean(), hw, st.c0 * len(s), [], [len(s)]
 
 
-METHODS = {"SRS": run_srs, "PPI++": run_ppi, "Strat": run_strat, "Ladder": run_ladder,
-           "Ladder-nostrat": lambda *a: run_ladder(*a, strat=False),
+def run_multippi(st, pilot, rest, eps, conf, rng, cand, n_models=5):
+    """MultiPPI-style baseline (Cowen-Breen et al., ICLR 2026): budget allocation across subsets of predictors with
+    the multilevel best linear unbiased estimator (MLBLUE, Schaden & Ullmann 2020). Models are the oracle and the
+    calibrated surrogates of up to n_models single labelers on the pilot's cost-quality skyline (highest rho^2 first); every non-empty subset of
+    them is a sample group with its own independent uniform sample. Covariances come from the pilot, the variance is
+    the infinite-population one (no finite-population correction, no scan bound in the model), and the allocation
+    minimises cost subject to the variance target."""
+    from scipy.optimize import minimize
+    Yp, Pp = st.Y[pilot], st.P[pilot]
+    N_rest = len(rest)
+    V = (eps * max(Yp.mean(), 1 / len(pilot)) / L.Z[conf]) ** 2
+    r2 = {k: L.cv_rho2(Pp, Yp, [k], st.C) for k in cand}
+    uc = {k: st.Cost[pilot, k].mean() for k in cand}
+    sky = [k for k in cand if r2[k] > 0 and not any(uc[j] <= uc[k] and r2[j] >= r2[k] and (uc[j], r2[j]) != (uc[k], r2[k])
+                                                   for j in cand)]  # cost-quality skyline of single labelers
+    top = sorted(sky, key=lambda k: -r2[k])[:n_models]
+    sur = [L.Surrogate([k], st.C).fit(Pp, Yp) for k in top]
+    F = np.column_stack([Yp] + [s_(Pp) for s_ in sur])
+    keep = [0] + [j for j in range(1, F.shape[1]) if np.std(F[:, j]) > 1e-9]
+    F = F[:, keep]; top = [top[j - 1] for j in keep[1:]]; sur = [sur[j - 1] for j in keep[1:]]
+    M = F.shape[1]
+    Sig = np.cov(F, rowvar=False) + 1e-9 * np.eye(M)
+    Sig[0, 0] = max(Sig[0, 0], pilot_var(Yp))
+    unit = np.array([st.c0] + [st.Cost[pilot, k].mean() for k in top])
+    groups = [g for r in range(1, M + 1) for g in itertools.combinations(range(M), r)]
+    A = []
+    for g in groups:
+        Pk = np.zeros((len(g), M)); Pk[range(len(g)), list(g)] = 1
+        A.append(Pk.T @ np.linalg.inv(Sig[np.ix_(g, g)]) @ Pk)
+    A = np.array(A); cg = np.array([unit[list(g)].sum() for g in groups])
+    e0 = np.zeros(M); e0[0] = 1
+
+    def var(m):
+        Psi = np.tensordot(m, A, 1) + 1e-12 * np.eye(M)
+        x = np.linalg.solve(Psi, e0)
+        return x[0], x
+
+    def f(m):
+        v, x = var(m)
+        return v, -np.array([x @ Ak @ x for Ak in A])
+    m0 = np.ones(len(groups)) / cg.sum()
+    res = minimize(f, m0, jac=True, method="SLSQP", bounds=[(0, None)] * len(groups),
+                   constraints=[{"type": "eq", "fun": lambda m: cg @ m - 1, "jac": lambda m: cg}],
+                   options={"maxiter": 200, "ftol": 1e-12})
+    m = np.maximum(res.x if res.success else m0, 0)
+    m = m * var(m)[0] / V                       # scale the unit-budget allocation to meet the target
+    m = np.minimum(np.ceil(m * (m >= 0.5)), N_rest)
+    if not any(m[i] >= 2 for i, g in enumerate(groups) if 0 in g):  # at least one oracle group
+        i0 = groups.index((0,)); m[i0] = max(m[i0], 2)
+    m[(m > 0) & (m < 2)] = 2
+    base = int(rng.integers(2 ** 31))
+    Psi = np.zeros((M, M)); b = np.zeros(M); cost = 0.0; n_or = 0
+    for i, g in enumerate(groups):
+        if m[i] < 2: continue
+        smp = np.random.default_rng([base, i]).permutation(rest)[:int(m[i])]   # independent per group, nested in m
+        vals = np.column_stack([st.Y[smp]] + [s_(st.P[smp]) for s_ in sur])[:, list(g)]
+        Pk = np.zeros((len(g), M)); Pk[range(len(g)), list(g)] = 1
+        W = Pk.T @ np.linalg.inv(Sig[np.ix_(g, g)])
+        Psi += len(smp) * W @ Pk; b += len(smp) * W @ vals.mean(0)
+        cost += (st.c0 * len(smp) if 0 in g else 0.0) + sum(st.Cost[smp, top[j - 1]].sum() for j in g if j > 0)
+        if 0 in g: n_or += len(smp)
+    mu = np.linalg.solve(Psi + 1e-12 * np.eye(M), b); v = np.linalg.solve(Psi + 1e-12 * np.eye(M), e0)[0]
+    return mu[0], L.Z[conf] * np.sqrt(max(v, 0.0)), cost, [tuple(top)], [n_or, int(m.sum())]
+
+
+METHODS = {"SRS": run_srs, "PPI++": run_ppi, "Strat": run_strat, "Ladder": run_ladder, "MultiPPI": run_multippi,
+           "Ladder-nostrat": lambda *a, **k: run_ladder(*a, strat=False, **k),
            # stronger baselines: one proxy with an optimally sized (not full) sample, and proxy stratification with
            # the same sparse-stratum shrinkage and phase-1 sizing as Ladder's stratified plans
-           "PPI++-sub": lambda *a: run_ladder(*a, bundles=False, max_len=1, strat=False),
-           "Strat-shrink": lambda *a: run_ladder(*a, bundles=False, cv=False),
-           "Ladder-nobundle": lambda *a: run_ladder(*a, bundles=False),
-           "Ladder-len1": lambda *a: run_ladder(*a, max_len=1)}
+           "PPI++-sub": lambda *a, **k: run_ladder(*a, bundles=False, max_len=1, strat=False, **k),
+           "Strat-shrink": lambda *a, **k: run_ladder(*a, bundles=False, cv=False, **k),
+           "Ladder-nobundle": lambda *a, **k: run_ladder(*a, bundles=False, **k),
+           "Ladder-len1": lambda *a, **k: run_ladder(*a, max_len=1, **k)}
+PLANNERS = {"Ladder", "Strat-shrink", "Ladder-nobundle", "Ladder-len1", "Ladder-nostrat", "PPI++-sub"}  # planner-sized methods
 
 
-def trial(st, method, eps=0.05, conf=0.95, pilot_n=200, seed=0, cand=None, max_rounds=8):
+def trial(st, method, eps=0.05, conf=0.95, pilot_n=200, seed=0, cand=None, max_rounds=12):
     """One run. Every method executes its plan, and if the reported half-width exceeds eps times its own estimate it
     tops up: the plan is re-sized for a proportionally tighter target and extended (same random order, so the new
-    samples extend the old ones), up to max_rounds. The cost of the final round is charged."""
+    samples extend the old ones), up to max_rounds. The cost of the final round is charged. A planner whose oracle
+    sample would reach half of the remaining tuples, or whose last round still misses the target, labels all
+    remaining tuples instead (exact answer). When a planned
+    oracle sample stops growing (+<5% over a round while the target is missed, e.g. because a pilot overrated a
+    surrogate or Neyman allocation is capped at stratum sizes), the next rounds double it; samples are prefixes,
+    so they extend."""
     cand = list(range(len(st.labelers))) if cand is None else cand
-    eps_eff = eps
+    eps_eff = eps; kw = {}; prev_n = None
     for rnd in range(max_rounds):
         rng = np.random.default_rng(seed)
         perm = rng.permutation(st.N); pilot, rest = perm[:pilot_n], perm[pilot_n:]
-        th, hw, cost, chain, sizes = METHODS[method](st, pilot, rest, eps_eff, conf, rng, cand)
+        info = {}
+        args = (st, pilot, rest, eps_eff, conf, rng, cand)
+        th, hw, cost, chain, sizes = METHODS[method](*args, info=info, **kw) if method in PLANNERS else METHODS[method](*args)
         Nr_ = len(rest); est_ = (st.Y[pilot].sum() + Nr_ * th) / st.N; hw_ = hw * Nr_ / st.N
         if hw_ <= eps * abs(est_) + 1e-12 or (sizes and sizes[0] >= Nr_):  # met, or the oracle saw everything
             break
+        if method in PLANNERS and sizes and (sizes[0] >= 0.5 * Nr_ or rnd == max_rounds - 1):
+            # exhaustive fallback: the oracle would label most of the table anyway (or the last round still misses
+            # the target), so label the rest exactly
+            # (charged on top of the labeler calls already made in this round)
+            cost = st.c0 * Nr_ + max(cost - st.c0 * sizes[0], 0.0); th, hw = st.Y[rest].mean(), 0.0
+            sizes = [Nr_] + list(sizes[1:]); chain = chain + [("exact",)]
+            break
+        if method in PLANNERS and info.get("kind") in ("strat", "cv") and prev_n is not None and sizes[0] < 1.05 * prev_n:
+            kw = {"n_boost": 2.0 * kw.get("n_boost", 1.0)}  # stagnating oracle sample: grow it
+        prev_n = sizes[0] if info.get("kind") in ("strat", "cv") else None
         eps_eff *= min(0.9, max(0.5, 0.9 * eps * abs(est_) / max(hw_, 1e-12)))  # tighten, at most halve per round
     pilot_cost = st.c0 * pilot_n + (0.0 if method == "SRS" else st.Cost[pilot][:, cand].sum())
     Nr = len(rest)
@@ -218,7 +303,7 @@ def trial(st, method, eps=0.05, conf=0.95, pilot_n=200, seed=0, cand=None, max_r
     hw = hw * Nr / st.N
     return dict(method=method, est=est, hw=hw, truth=st.truth, covered=abs(est - st.truth) <= hw,
                 rel_err=abs(est - st.truth) / st.truth, rel_hw=hw / st.truth, cost=cost + pilot_cost,
-                cost_main=cost, rounds=rnd + 1, met=hw <= eps * abs(est) + 1e-12, chain="|".join("+".join(st.labelers[k] for k in m) for m in chain),
+                cost_main=cost, rounds=rnd + 1, met=hw <= eps * abs(est) + 1e-12, chain="|".join("+".join(k if isinstance(k, str) else st.labelers[k] for k in m) for m in chain),
                 sizes=sizes)
 
 
